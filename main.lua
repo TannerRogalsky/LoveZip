@@ -9,10 +9,9 @@ FileEntry = ffi.typeof("lua_zip_file_entry")
 EOCD = ffi.typeof("lua_zip_eocd")
 CentralDirectory = ffi.typeof("lua_zip_central_directory")
 LuaZipHeader = ffi.typeof("lua_zip_header")
-local ptrSize = ffi.sizeof("void*")
 
-local function findBackwards(contents, size, header)
-  for index=size - 4 - 1,0,-1 do
+local function findBackwards(contents, start, header)
+  for index=start,0,-1 do
     local all = true
     for i=0,3 do
       if header.b[i] ~= contents[index + i] then
@@ -28,95 +27,82 @@ local function findBackwards(contents, size, header)
   return -1
 end
 
--- local function crc32(in)
---   local checksum = ()
--- end
-
 do
   local raw = love.filesystem.read('control.zip')
-  -- local raw = love.filesystem.read('test.dat')
   local contents = ffi.cast("uint8_t*", raw)
   local eocdHeader = LuaZipHeader()
   eocdHeader.h = 0x06054B50;
 
-  local eocdIndex = findBackwards(contents, #raw, eocdHeader)
+  local eocdIndex = findBackwards(contents, #raw - ffi.sizeof(EOCD), eocdHeader)
   assert(eocdIndex >= 0, "End Of Central Directory header not found.")
 
   local eocd = EOCD()
   ffi.copy(eocd, contents + eocdIndex, ffi.sizeof(EOCD))
-  -- print('numberOfDisk', eocd.numberOfDisk)
-  -- print('diskWhereCentralDir', eocd.diskWhereCentralDir)
-  -- print('numberCentralDirsOnDisk', eocd.numberCentralDirsOnDisk)
-  -- print('totalCentralDirs', eocd.totalCentralDirs)
-  -- print('sizeOfCentralDir', eocd.sizeOfCentralDir)
-  -- print('offsetOfCentralDir', eocd.offsetOfCentralDir)
-  -- print('commentLength', eocd.commentLength)
 
-  local cdHeader = LuaZipHeader()
-  cdHeader.h = 0x02014b50
-  local cdIndex = findBackwards(contents, eocdIndex, cdHeader)
-  assert(cdIndex >= 0, "Central Directory header not found.")
-  local cdSize = ffi.sizeof(CentralDirectory)
-  local cd = CentralDirectory()
-  ffi.copy(cd, contents + cdIndex, cdSize)
-  -- TODO compressionMethod 0 = no compression
-  assert(cd.compressionMethod == 8, "Only DEFLATE plz.")
-  -- print('version', cd.version)
-  -- print('minVersion', cd.minVersion)
-  -- print('generalFlag', cd.generalFlag)
-  -- print('compressionMethod', cd.compressionMethod)
-  -- print('lastModifiedTime', cd.lastModifiedTime)
-  -- print('lastModifiedData', cd.lastModifiedData)
-  -- print('crc32', cd.crc32)
-  -- print('compressedSize', cd.compressedSize)
-  -- print('uncompressedSize', cd.uncompressedSize)
-  -- print('fileNameLength', cd.fileNameLength)
-  -- print('extraFieldLength', cd.extraFieldLength)
-  -- print('fileCommentLength', cd.fileCommentLength)
-  -- print('diskNumberFileStarts', cd.diskNumberFileStarts)
-  -- print('internalFileAttributes', cd.internalFileAttributes)
-  -- print('externalFileAttributes', cd.externalFileAttributes)
-  -- print('fileHeaderOffset', cd.fileHeaderOffset)
-
-  local fileNamePtr = contents + cdIndex + cdSize + ptrSize * 0
-  local fileName = ffi.string(fileNamePtr, cd.fileNameLength)
-  print(fileName)
-
-  local file = FileEntry()
-  ffi.copy(file, contents + cd.fileHeaderOffset, ffi.sizeof(FileEntry))
-  assert(file.header == 0x04034b50, 'File Header is wrong.')
-  -- print(file.fileNameLength)
-  -- print(file.extraFieldLength)
-  -- print(file.compressedSize)
-  -- print(file.compressionMethod)
-  local fileContentsPtr = contents
-                        + cd.fileHeaderOffset
-                        + ffi.sizeof(FileEntry)
-                        + file.fileNameLength
-                        + file.extraFieldLength
-
-  local uncompressedPtr = ffi.new('uint8_t[?]', file.uncompressedSize)
-
-  local stream = ffi.new('z_stream')
-  stream.next_in = fileContentsPtr
-  stream.avail_in = file.compressedSize
-  stream.next_out = uncompressedPtr
-  stream.avail_out = file.uncompressedSize
-
-  local version, streamsize = ffi.C.zlibVersion(), ffi.sizeof(stream)
-  -- -15 AKA -MAX_WBITS makes zlib not look for headers
-  local ret = ffi.C.inflateInit2_(stream, -15, version, streamsize)
-  assert(ret == ffi.C.Z_OK, 'ZLIB error: ' .. ret)
-
-  ret = ffi.C.inflate(stream, ffi.C.Z_FINISH);
-  if ret ~= ffi.C.Z_STREAM_END then
-    ffi.C.inflateEnd(stream)
-    assert(false, 'ZLIB error: ' .. ret)
+  local centralDirectories = {}
+  local cdIndex = eocd.offsetOfCentralDir;
+  for i=1,eocd.totalCentralDirs do
+    local cdSize = ffi.sizeof(CentralDirectory)
+    local cd = CentralDirectory()
+    ffi.copy(cd, contents + cdIndex, cdSize)
+    table.insert(centralDirectories, cd)
+    cdIndex = cdIndex + cdSize +
+              cd.fileNameLength +
+              cd.extraFieldLength +
+              cd.fileCommentLength
   end
 
-  local uncompressed = ffi.string(uncompressedPtr, file.uncompressedSize)
-  print(uncompressed)
-  ffi.C.inflateEnd(stream)
+  local files = {}
+  for i,cd in ipairs(centralDirectories) do
+    local file = FileEntry()
+    local dataPtr = contents + cd.fileHeaderOffset
+    ffi.copy(file, dataPtr, ffi.sizeof(FileEntry))
+    assert(file.header == 0x04034b50, 'File Header is wrong.')
+
+    local fileNamePtr = dataPtr + ffi.sizeof(FileEntry)
+    local fileName = ffi.string(fileNamePtr, file.fileNameLength)
+
+
+    local fileContentsPtr = dataPtr
+                          + ffi.sizeof(FileEntry)
+                          + file.fileNameLength
+                          + file.extraFieldLength
+
+    if file.compressionMethod == 0 then -- STORE
+      files[fileName] = ffi.string(fileContentsPtr, file.uncompressedSize)
+    elseif file.compressionMethod == 8 then -- DEFLATE
+      local uncompressedPtr = ffi.new('uint8_t[?]', file.uncompressedSize)
+
+      local stream = ffi.new('z_stream')
+      stream.next_in = fileContentsPtr
+      stream.avail_in = file.compressedSize
+      stream.next_out = uncompressedPtr
+      stream.avail_out = file.uncompressedSize
+
+      local version, streamsize = ffi.C.zlibVersion(), ffi.sizeof(stream)
+      -- -15 AKA -MAX_WBITS makes zlib not look for headers
+      local ret = ffi.C.inflateInit2_(stream, -15, version, streamsize)
+      assert(ret == ffi.C.Z_OK, 'ZLIB error: ' .. ret)
+
+      ret = ffi.C.inflate(stream, ffi.C.Z_FINISH);
+      if ret ~= ffi.C.Z_STREAM_END then
+        ffi.C.inflateEnd(stream)
+        assert(false, 'ZLIB error: ' .. ret)
+      end
+
+      local uncompressed = ffi.string(uncompressedPtr, file.uncompressedSize)
+
+      files[fileName] = uncompressed
+
+      ffi.C.inflateEnd(stream)
+    else
+      assert(false, "Only STORE or DEFLATE plz. Compression method: " .. file.compressionMethod)
+    end
+  end
+
+  for k,v in pairs(files) do
+    print(k)
+  end
 end
 
 -- local fileName = 'conf.lua'
