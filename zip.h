@@ -1,12 +1,3 @@
-typedef struct {
-  union {
-    struct {
-      uint32_t h;
-    };
-    uint8_t b[4];
-  };
-} lua_zip_header;
-
 typedef struct __attribute__((packed)) {
   uint32_t header;                // offset 0
   uint16_t minVersion;            // offset 4
@@ -21,30 +12,30 @@ typedef struct __attribute__((packed)) {
   uint16_t extraFieldLength;      // offset 30
   // uint8_t fileName[fileNameLength];
   // uint8_t extraField[extraFieldLength];
-} lua_zip_file_entry;
+} lua_zip_file_entry; // File record
 
 typedef struct __attribute__((packed)) {
-  uint32_t header;                // offset 0
-  uint16_t version;
-  uint16_t minVersion;            // offset 4
-  uint16_t generalFlag;           // offset 6
-  uint16_t compressionMethod;     // offset 8
-  uint16_t lastModifiedTime;      // offset 10
-  uint16_t lastModifiedData;      // offset 12
-  uint32_t crc32;                 // offset 14
-  uint32_t compressedSize;        // offset 18
-  uint32_t uncompressedSize;      // offset 26
-  uint16_t fileNameLength;        // offset 28
-  uint16_t extraFieldLength;      // offset 30
-  uint16_t fileCommentLength;
-  uint16_t diskNumberFileStarts;
-  uint16_t internalFileAttributes;
-  uint32_t externalFileAttributes;
-  uint32_t fileHeaderOffset;
+  uint32_t header;                 // offset 0
+  uint16_t version;                // offset 0
+  uint16_t minVersion;             // offset 0
+  uint16_t generalFlag;            // offset 0
+  uint16_t compressionMethod;      // offset 0
+  uint16_t lastModifiedTime;       // offset 0
+  uint16_t lastModifiedData;       // offset 0
+  uint32_t crc32;                  // offset 0
+  uint32_t compressedSize;         // offset 0
+  uint32_t uncompressedSize;       // offset 0
+  uint16_t fileNameLength;         // offset 0
+  uint16_t extraFieldLength;       // offset 0
+  uint16_t fileCommentLength;      // offset 0
+  uint16_t diskNumberFileStarts;   // offset 0
+  uint16_t internalFileAttributes; // offset 0
+  uint32_t externalFileAttributes; // offset 0
+  uint32_t fileHeaderOffset;       // offset 0
   // uint8_t fileName[fileNameLength];
   // uint8_t extraField[extraFieldLength];
   // uint8_t fileComment[fileCommentLength];
-} lua_zip_central_directory; // End Of Central Directory record
+} lua_zip_central_directory; // Central Directory record
 
 typedef struct __attribute__((packed)) {
   uint32_t header;                  // offset 0
@@ -58,7 +49,36 @@ typedef struct __attribute__((packed)) {
   // uint8_t comment[commentLength];
 } lua_zip_eocd; // End Of Central Directory record
 
-// zlib
+typedef struct {
+  union {
+    uint32_t h;
+    uint8_t b[4];
+  };
+} lua_zip_header; // just useful, not important
+
+
+// https://github.com/hamishforbes/lua-ffi-zlib
+// MIT License
+
+// Copyright (c) 2016 Hamish Forbes
+
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
 enum {
     Z_NO_FLUSH           = 0,
     Z_PARTIAL_FLUSH      = 1,
@@ -126,7 +146,11 @@ int inflateInit2_(z_stream*, int windowBits, const char* version, int stream_siz
 int deflate(z_stream*, int flush);
 int deflateEnd(z_stream* );
 int deflateInit2_(z_stream*, int level, int method, int windowBits, int memLevel,int strategy, const char *version, int stream_size);
-unsigned long adler32(unsigned long adler, const char *buf, unsigned len);
-unsigned long crc32(unsigned long crc,   const char *buf, unsigned len);
-unsigned long adler32_combine(unsigned long, unsigned long, long);
-unsigned long crc32_combine(unsigned long, unsigned long, long);
+uint32_t adler32(unsigned long adler, const char *buf, unsigned len);
+uint32_t crc32(unsigned long crc,   const char *buf, unsigned len);
+
+unsigned long compressBound(unsigned long sourceLen);
+int compress2(uint8_t *dest, unsigned long *destLen,
+        const uint8_t *source, unsigned long sourceLen, int level);
+int uncompress(uint8_t *dest, unsigned long *destLen,
+         const uint8_t *source, unsigned long sourceLen);
