@@ -23,7 +23,7 @@ for i,file in ipairs(files) do
   local contents = love.filesystem.read(file)
   zip:add(file, contents)
 end
-local compressed = zip:compress()
+local compressed = zip:compress() -- equivalent to `tostring(zip)`
 love.filesystem.write(output_name, compressed)
 
 local contents, size = love.filesystem.read(output_name)
