@@ -223,7 +223,7 @@ end
 function Zip.new()
   return setmetatable({
     entries = {}
-  }, {__index = Zip_mt})
+  }, {__index = Zip_mt, __tostring = Zip_mt.compress})
 end
 
 function Zip_mt:add(filename, contents)
@@ -379,6 +379,14 @@ function Zip.decompress(raw)
     local dataPtr = contents + cd.fileHeaderOffset
     ffi.copy(file, dataPtr, ffi.sizeof(FileEntry))
     assert(file.header == 0x04034b50, 'File Header is wrong.')
+
+    -- for robustness, it would be good to check these values against
+    -- data descriptor record after the compressed data
+    if bit.band(file.generalFlag, 0x08) > 0 then
+      file.crc32 = cd.crc32
+      file.compressedSize = cd.compressedSize
+      file.uncompressedSize = cd.uncompressedSize
+    end
 
     local fileNamePtr = dataPtr + ffi.sizeof(FileEntry)
     local fileName = ffi.string(fileNamePtr, file.fileNameLength)

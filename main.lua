@@ -32,16 +32,4 @@ for i,file in ipairs(files) do
   assert(zip2.entries[file], 'Missing ' .. file)
 end
 
-local contents, size = love.filesystem.read('7z_created.zip')
-local zip3 = Zip.decompress(contents)
-for k,v in pairs(zip3.entries) do
-  print(k)
-end
-
-local contents, size = love.filesystem.read('archive_utility_created.zip')
-local zip4 = Zip.decompress(contents)
-for k,v in pairs(zip4.entries) do
-  print(k)
-end
-
 love.event.push("quit")
